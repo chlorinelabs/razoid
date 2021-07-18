@@ -12,3 +12,4 @@ blocks:
           commands:
             - checkout
             - mvn package
+            - artifact push workflow target/razoid-1.0-SNAPSHOT.jar
