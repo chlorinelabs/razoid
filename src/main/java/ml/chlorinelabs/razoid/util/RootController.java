@@ -1,17 +1,19 @@
 package ml.chlorinelabs.razoid.util;
 
 import java.io.IOException;
-import java.util.Locale;
-import java.util.Scanner;
-import java.util.Vector;
+import java.util.*;
+import java.util.concurrent.Callable;
 
 public class RootController {
 
     private final Vector<LogSystem> logSystemVector;
+    private final Vector<DataRecorder> dataRecorderVector;
     private final static String[] rootAssociates = {
             "RootExtensions"
     };
     private final static Scanner sc = new Scanner(System.in);
+
+    private static List<Callable<Void>> executionStack;
 
     public RootController(boolean verbose) {
         // LogSystem Vector Initialization
@@ -30,6 +32,18 @@ public class RootController {
             rootSystemExit(101);
         }
 
+        // DataRecorder Initialization
+        dataRecorderVector = new Vector<>(1,1);
+
+        // Enable Multiprocessor Job Allocation
+        ProcessingController.pollProcessorCount();
+        ProcessingController.disableScheduledProcessorPolling();
+        ProcessingController.initialize();
+        primaryLog("ProcessingController now Initialized ("+ProcessingController.getProcessorCount()+" cores, "+ProcessingController.getThreadCount()+" threads)");
+
+        // Initialize Processor Execution Stack
+        executionStack = new ArrayList<>();
+        primaryLog("ProcessorExecutionStack Initialized");
     }
 
     public int createLogSystem(String fn, String prefix, boolean verbose) {
@@ -40,6 +54,19 @@ public class RootController {
             logSystemVector.elementAt(id).init();
         } catch (IOException ioe) {
             primaryLog("WARN: Creation of additional logsystem failed (Error Code RZ201). Severity: High. Continuing execution ... ");
+            primaryLog("WARN: Dumping Exception StackTrace ... ");
+            primaryLog(ioe.getMessage());
+        }
+        return id;
+    }
+
+    public int createDataRecorder(String fn) {
+        int id = dataRecorderVector.size();
+        primaryLog("INFO: Received request creation of additional data recorder at ["+id+"] for \""+fn+"\"");
+        try {
+            dataRecorderVector.addElement(new DataRecorder(fn));
+        } catch (IOException ioe) {
+            primaryLog("WARN: Creation of additional data recorder failed (Error Code RZ203). Severity: High. Continuing execution ... ");
             primaryLog("WARN: Dumping Exception StackTrace ... ");
             primaryLog(ioe.getMessage());
         }
@@ -69,12 +96,38 @@ public class RootController {
         return null;
     }
 
+    public DataRecorder getDataRecorder(int id) {
+        primaryLog("INFO: Received request for accessing data recorder at ["+id+"] ...");
+        if(id >= dataRecorderVector.size()) {
+            primaryLog("ERROR (FATAL): Request for accessing data recorder ["+id+"] declined. RootDataRecorderVector does not have the required data recorder (Error Code: RZ306) Terminating Program ...");
+            rootSystemExit(306);
+        }
+        if(id < 0) {
+            primaryLog("ERROR (FATAL): Request for accessing data recorder ["+id+"] declined. Request has negative pointer index (Error Code: RZ307) Terminating Program ...");
+            rootSystemExit(307);
+        }
+        try {
+            return dataRecorderVector.elementAt(id);
+        } catch (Exception e) {
+            primaryLog("ERROR (FATAL): Request for accessing data recorder ["+id+"] cannot be processed. Request was met with an unknown error while processing (Error Code: RZ308) Terminating Program ...");
+            rootSystemExit(308);
+        }
+        return null;
+    }
+
     public void log(int id, String msg) {
         try {
             getLogSystem(id).log(msg);
         } catch (Exception e) {
             primaryLog("WARN: Request for logging a message into logsystem ["+id+"] cannot be processed. Request was met with an unknown error while processing (Error Code: RZ202, Severity: Low)  Continuing Execution ...");
-            rootSystemExit(202);
+        }
+    }
+
+    public void datarecord(int id, String data) {
+        try {
+            getDataRecorder(id).record(data);
+        } catch (Exception e) {
+            primaryLog("WARN: Request for recording data into data recorder["+id+"] cannot be processed. Request was met with an unknown error while processing (Error Code: RZ204, Severity: Low)  Continuing Execution ...");
         }
     }
 
@@ -100,6 +153,27 @@ public class RootController {
 
     public static String getUserInput() {
         return sc.nextLine();
+    }
+
+    public void clearExecutionStack() {
+        executionStack.clear();
+        primaryLog("Request to Clear ExecutionStack Accepted ...");
+    }
+
+    public void addToExecutionStack(Callable<Void> callable) {
+        executionStack.add(callable);
+        primaryLog("Request to Add New Callable to ExecutionStack Accepted ...");
+    }
+
+    public void executeStack() {
+        primaryLog("ExecutionStack sent to ProcessingController ...");
+        try {
+            ProcessingController.execute(executionStack);
+        } catch (InterruptedException ie) {
+            primaryLog("ERROR: ExecutionStack from ProcessingController was halted. Unknown InterruptedException walked in. (Error Code RZ205). Terminating ...");
+            System.out.println("ERROR: ExecutionStack from ProcessingController was halted. Unknown InterruptedException walked in. (Error Code RZ205). Terminating ...");
+            rootSystemExit(205);
+        }
     }
 
     private LogSystem getPrimaryLogSystem() {
