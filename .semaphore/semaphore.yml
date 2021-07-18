@@ -10,4 +10,5 @@ blocks:
       jobs:
         - name: Maven Package
           commands:
+            - checkout
             - mvn package
